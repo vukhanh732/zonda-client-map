@@ -36,6 +36,10 @@
     <input id="search-input" type="text" placeholder="Search for locations">
     <button class="toggle-button" onclick="viewAll()">View All</button>
     <button class="toggle-button" onclick="viewClients()">View Clients</button>
+    <button class="toggle-button" onclick="viewSector('hospital')">View Hospitals</button>
+    <button class="toggle-button" onclick="viewSector('aged care')">View Aged Care</button>
+    <button class="toggle-button" onclick="viewSector('doctor')">View Doctors</button>
+
   </div>
 
   <div id="map"></div>
@@ -51,18 +55,36 @@
     // Custom clients for testing
     var clientHospitals = [
         { name: "Client Hospital 1", lat: -33.87322729582937, lng: 151.22264216085205 },
-        { name: "Client Hospital 2", lat: -37.87322729582937, lng: 155.22264216085205 }
+        { name: "Client Hospital 2", lat: -33.86322729582937, lng: 155.22264216085205 },
+        { name: "Client Hospital 3", lat: -33.88322729582937, lng: 151.23264216085205 },
+        { name: "Client Hospital 4", lat: -33.67322729582937, lng: 151.23464216085205 },
+        { name: "Client Hospital 5", lat: -32.15322729582937, lng: 150.26264216085205 },
+        { name: "Client Hospital 6", lat: -33.82322729582937, lng: 153.23264216085205 },
+        { name: "Client Hospital 7", lat: -33.82322729582937, lng: 153.23264216085205 },
     ];
+
     ///////////////////////////
 
-    function initMap() {
+    async function initMap() {
       map = new google.maps.Map(document.getElementById('map'), {
         center: { lat: -31.840233, lng: 145.612793 },
-        zoom: 7
+        zoom: 7,
+        styles: [
+                {
+                    "featureType": "poi",
+                    "stylers": [{ "visibility": "off" }]  // Hides points of interest
+                },
+                {
+                    "featureType": "poi.business",
+                    "stylers": [{ "visibility": "off" }]  // Specifically hides businesses
+                }
+                // Add more style features as needed
+            ]
       });
 
       infoWindow = new google.maps.InfoWindow();
       var searchBox = new google.maps.places.SearchBox(document.getElementById('search-input'));
+      var distanceMatrixService = new google.maps.DistanceMatrixService();
 
       map.addListener('bounds_changed', function () {
         searchBox.setBounds(map.getBounds());
@@ -105,12 +127,29 @@
             }
         });
 
+        // Create the client markers
+        var clients = JSON.parse(localStorage.getItem('clients')) || [];
+        for (var i = 0; i < clients.length; i++) {
+            var clientMarker = new google.maps.Marker({
+                map: map,
+                position: clients[i].geometry.location,
+                icon: {
+                    path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+                    scale: 5,
+                    fillColor: 'black',
+                    fillOpacity: 1,
+                    strokeColor: 'white',
+                    strokeWeight: 1
+                }
+            });
+        }
+
         // Adjust map view to fit the circle
         map.fitBounds(searchCircle.getBounds());
 
         searchNearbyPlaces(location, ['hospital', 'health', 'doctor']);
         searchWithKeyword(location, 'aged care');
-        displayHospitals(clientHospitals, 'black');
+        displayClients(clientHospitals, 'black');
       });
     }
 
@@ -119,7 +158,7 @@
         types.forEach(function(type) {
             service.nearbySearch({
                 location: location,
-                radius: searchRadius,
+                radius: searchRadius * 2,
                 type: type
             }, callback);
         });
@@ -129,7 +168,7 @@
         var service = new google.maps.places.PlacesService(map);
         service.nearbySearch({
             location: location,
-            radius: searchRadius,
+            radius: searchRadius * 2,
             keyword: keyword
         }, callback);
     }
@@ -146,36 +185,41 @@
         }
     }
 
-    function createMarker(place, icon = null) {
+    function createMarker(place) {
+        var iconColor = getMarkerIcon(place.types);
         var marker = new google.maps.Marker({
             map: map,
             position: place.geometry.location,
-            icon: getMarkerIcon(place.types) // Call a function to get the appropriate marker icon based on place types
+            icon: iconColor ? {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 5,
+                fillColor: iconColor,
+                fillOpacity: 1,
+                strokeColor: 'white',
+                strokeWeight: 1
+            } : null
         });
+
+        marker.addListener('rightclick', function() {
+            markAsClient(marker, place);
+        });
+
         markers.push(marker);
-        marker.addListener('click', function () {
+
+        marker.addListener('click', function() {
             showPlaceInfo(place, marker);
         });
-    }
+    } 
+
 
     function getMarkerIcon(types) {
-        var iconColor = 'orange'; // Default color
-        types.forEach(function(type) {
-            if (type === 'hospital') {
-                iconColor = 'red'; // Assign red color for hospitals
-            } else if (type === 'doctor') {
-                iconColor = 'yellow'; // Assign yellow color for doctors
-            }
-        });
-
-        return {
-            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-            scale: 5,
-            fillColor: iconColor,
-            fillOpacity: 1,
-            strokeColor: 'white',
-            strokeWeight: 1
-        };
+        if (types.includes('hospital')) {
+            return 'red'; // Red color for hospitals
+        } else if (types.includes('doctor')) {
+            return 'yellow'; // Yellow color for doctors
+        } else  {
+            return 'orange'; // Blue color for aged care
+        }
     }
 
     function showPlaceInfo(place, marker) {
@@ -214,16 +258,35 @@
 
     function viewClients() {
       clearMarkers();
-      displayHospitals(clientHospitals, 'black');
+      displayClients(clientHospitals, 'black');
+      /*
+      fetchClientHospitalsFromVincere()
+        .then(clientHospitals => {
+            clearMarkers();
+            displayClients(clientHospitals, 'black');
+        })
+        .catch(error => console.error('Error fetching client hospitals:', error));
+      */
+    }
+    
+    function viewSector(sector) {
+      clearMarkers();
+      var location = map.getCenter();
+
+      if (sector === 'hospital' || sector === 'doctor') {
+          searchNearbyPlaces(location, [sector]);
+      } else if (sector === 'aged care') {
+          searchWithKeyword(location, 'aged care');
+      }
     }
 
-    function displayHospitals(hospitals, color) {
-      hospitals.forEach(function(hospital) {
+    function displayClients(places, color) {
+      places.forEach(function(hospital) {
         var marker = new google.maps.Marker({
           map: map,
           position: { lat: hospital.lat, lng: hospital.lng },
           icon: {
-            path: google.maps.SymbolPath.BACKWARD_OPEN_ARROW,
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
             scale: 5,
             fillColor: color,
             fillOpacity: 1,
@@ -239,9 +302,66 @@
       });
     }
     
+    /* Function for getting client hospitals from Vincere's API
+    function fetchClientHospitalsFromVincere() {
+    return fetch('https://api.vincere.io/endpoint-for-client-hospitals', {
+        method: 'GET',
+        headers: {
+            'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+            // Additional headers as required by Vincere's API
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Process the data to fit the format expected by displayHospitals
+        // This depends on the structure of the data returned by Vincere
+        return data.map(item => ({
+            name: item.hospitalName, // Replace with actual property names
+            lat: item.latitude,
+            lng: item.longitude
+        }));
+    });
+    }
+    */ 
 
-    
+    function markAsClient(marker, place) {
+      // Retrieve clients from local storage
+      var clients = JSON.parse(localStorage.getItem('clients'));
+
+      // If clients is not an array, initialize it as an array
+      if (!Array.isArray(clients)) {
+        clients = [];
+      }
+
+      // Push the new client to the array
+      clients.push(place);
+
+      // Save clients back to local storage
+      localStorage.setItem('clients', JSON.stringify(clients));
+
+      // Create a new marker with a different icon
+      var clientMarker = new google.maps.Marker({
+        map: map,
+        position: marker.getPosition(),
+        icon: {
+          path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+          scale: 5,
+          fillColor: 'black',
+          fillOpacity: 1,
+          strokeColor: 'white',
+          strokeWeight: 1
+        }
+      });
+      
+      // On click of the client marker, show the place info
+      clientMarker.addListener('click', function() {
+        showPlaceInfo(place, clientMarker);
+      });
+
+    }
+
+
   </script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBAmvAFl_dcSorl6jEXtgd-NzAQA_j6wrA&libraries=places&callback=initMap" async defer></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC8RnGZuqIQDLEDn-j-JhTNhQOvI9dl9W8&libraries=places&callback=initMap" async defer></script>
 </body>
 </html>
