@@ -38,6 +38,7 @@
     <button class="toggle-button" onclick="viewClients()">View Clients</button>
     <button class="toggle-button" onclick="viewSector('hospital')">View Hospitals</button>
     <button class="toggle-button" onclick="viewSector('aged care')">View Aged Care</button>
+    <button class="toggle-button" onclick="viewSector('doctor')">View Doctor</button>
     <button class="toggle-button" onclick="searchHealthServices()">Nearby Health Services on Google Map</button>
   </div>
 
@@ -45,17 +46,18 @@
 
   <script>
     var map;
-    var markers = [];
     var infoWindow;
     var searchRadius = 5000;
     var searchCircle;
     var centerMarker;
     var data;
-    // Custom clients for testing
-    var clientHospitals = [
-       
-    ];
-    ///////////////////////////
+    var markersBySector = {
+      'hospital': [],
+      'aged care': [],
+      'health': [],
+      'doctor': [],
+      'client': [] // Assuming 'client' as a sector for custom client markers
+    };
 
     function initMap() {
       map = new google.maps.Map(document.getElementById('map'), {
@@ -166,25 +168,35 @@
     }
 
     function createMarker(place) {
-        var iconColor = getMarkerIcon(place.types);
-        var marker = new google.maps.Marker({
-            map: map,
-            position: place.geometry.location,
-            icon: iconColor ? {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 5,
-                fillColor: iconColor,
-                fillOpacity: 1,
-                strokeColor: 'white',
-                strokeWeight: 1
-            } : null
-        });
+      var iconColor = getMarkerIcon(place.types);
+      var marker = new google.maps.Marker({
+        map: map,
+        position: place.geometry.location,
+        icon: iconColor ? {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 5,
+          fillColor: iconColor,
+          fillOpacity: 1,
+          strokeColor: 'white',
+          strokeWeight: 1
+        } : null,
+        visible: true // Initially, markers are visible
+      });
 
-        google.maps.event.addListener(marker, 'click', function() {
-            showPlaceInfo(place, marker);
-        });
+      // Categorize the marker by sector
+      if (place.types.includes('hospital')) {
+        markersBySector['hospital'].push(marker);
+      } else if (place.types.includes('doctor') || place.name.toLowerCase().includes('doctor')) {
+        markersBySector['doctor'].push(marker);
+      } else if (place.name.toLowerCase().includes('aged care')) {
+        markersBySector['aged care'].push(marker);
+      } 
 
-    } 
+      google.maps.event.addListener(marker, 'click', function() {
+        showPlaceInfo(place, marker);
+      });
+    }
+
 
 
     function getMarkerIcon(types) {
@@ -200,19 +212,21 @@
    
 
     function clearMarkers() {
-      markers.forEach(function(marker) {
-        marker.setMap(null);
+      Object.keys(markersBySector).forEach(key => {
+        markersBySector[key].forEach(marker => {
+          marker.setVisible(false);
+        });
       });
-      markers = [];
     }
 
     function viewAll() {
-      clearMarkers();
-      var location = map.getCenter();
-      viewClients();
-      searchNearbyPlaces(location, ['hospital', 'health', 'doctor']);
-      searchWithKeyword(location, 'aged care');
+      Object.keys(markersBySector).forEach(key => {
+        markersBySector[key].forEach(marker => {
+          marker.setVisible(true);
+        });
+      });
     }
+
 
     function viewClients() {
       clearMarkers();
@@ -220,14 +234,11 @@
     }
     
     function viewSector(sector) {
-      clearMarkers();
-      var location = map.getCenter();
-
-      if (sector === 'hospital' || sector === 'doctor') {
-          searchNearbyPlaces(location, [sector]);
-      } else if (sector === 'aged care') {
-          searchWithKeyword(location, 'aged care');
-      }
+      Object.keys(markersBySector).forEach(key => {
+        markersBySector[key].forEach(marker => {
+          marker.setVisible(key === sector);
+        });
+      });
     }
 
     function searchHealthServices() {
@@ -304,13 +315,15 @@
                 google.maps.event.addListener(marker, 'click', () => {
                   displayClientInfo(client, i, marker);
                 });
+
+                // Add client marker to the 'client' sector
+                markersBySector['client'].push(marker);
               }
             }
           }
         }
       });
     }
-
     // Haversine formula to calculate distance
     function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
       var R = 6371; // Radius of the earth in km
